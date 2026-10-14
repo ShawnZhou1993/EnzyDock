@@ -1,0 +1,65 @@
+EnzyDock - third party components that ship with the application
+==================================================================
+
+1. AutoDock Vina 1.2.7
+----------------------
+
+  shipped as : app/resources/bin/vina.exe             (Windows x64)
+               app/resources/bin/vina_mac_aarch64     (macOS, Apple Silicon)
+               app/resources/bin/vina_mac_x86_64      (macOS, Intel)
+  upstream   : https://github.com/ccsb-scripps/AutoDock-Vina
+  licence    : Apache License, Version 2.0
+               (full text: licenses/AutoDock-Vina-LICENSE.txt)
+  copyright  : The Scripps Research Institute
+               Center for Computational Structural Biology (Forli Lab)
+
+The Apache License 2.0 permits redistribution in source or object form,
+for commercial and non-commercial use, provided the licence is passed on
+and the notices below are kept.  EnzyDock ships the files UNMODIFIED,
+byte for byte, as released upstream.  Only the build matching the machine
+EnzyDock runs on is ever used; the others are inert.
+
+  release       : https://github.com/ccsb-scripps/AutoDock-Vina/releases/tag/v1.2.7
+
+  upstream file : vina_1.2.7_win.exe
+  sha256        : e0c4b2715e0c1a74f6e92d0f3be0328ac97542eafbc111e6b1efad897a73cce5
+  size          : 1 233 920 bytes
+
+  upstream file : vina_1.2.7_mac_aarch64
+  sha256        : 823c2bbacf26d72183861322345f0a89736aca66c8e81054c66f93af5ad623f1
+  size          : 1 171 704 bytes
+
+  upstream file : vina_1.2.7_mac_x86_64
+  sha256        : 9f44ccbb163223613283a75d0be53235d9e63f4da08292cb7196144f9838b7f9
+  size          : 1 215 392 bytes
+
+Please cite AutoDock Vina in any publication that reports results
+obtained with it:
+
+  J. Eberhardt, D. Santos-Martins, A. F. Tillack, and S. Forli (2021).
+  AutoDock Vina 1.2.0: New Docking Methods, Expanded Force Field, and
+  Python Bindings. Journal of Chemical Information and Modeling 61 (8),
+  3891-3898.
+
+  O. Trott and A. J. Olson (2010). AutoDock Vina: improving the speed and
+  accuracy of docking with a new scoring function, efficient optimization,
+  and multithreading. Journal of Computational Chemistry 31 (2), 455-461.
+
+Replacing it
+------------
+EnzyDock looks for the docking engine in this order: a path you set in
+Preferences, the ENZYDOCK_VINA environment variable, this bundled copy,
+the folder holding the application, then the system PATH.  To use a
+different build, either drop it into the folder above under the name
+EnzyDock expects on your platform ("vina.exe" on Windows,
+"vina_mac_aarch64" or "vina_mac_x86_64" on macOS), or set it in
+Preferences.  On macOS a binary downloaded from the internet may need
+`xattr -dr com.apple.quarantine <file>` before it will run.
+
+2. Python packages
+------------------
+
+RDKit, PySide6 (Qt 6, including QtWebEngine), NumPy, SciPy, meeko, gemmi
+and 3Dmol.js retain their own licences and copyright notices, which are
+included with the bundled files (_internal on Windows,
+EnzyDock.app/Contents/Frameworks and .../Resources on macOS).

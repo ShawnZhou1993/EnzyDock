@@ -1,0 +1,10 @@
+# Development-only requirements for EnzyDock.
+# Install on top of requirements.txt:
+#     .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=8.0
+pytest-qt>=4.0
+
+# Windows EXE packaging (Step 10)
+pyinstaller>=6.3

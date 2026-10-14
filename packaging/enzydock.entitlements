@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the EnzyDock macOS build.
+
+  QtWebEngine runs a Chromium renderer in a separate helper process, and
+  Chromium's JavaScript engine needs writable, executable memory.  With the
+  hardened runtime enabled (which PyInstaller does for windowed builds) macOS
+  kills that helper instantly unless the JIT entitlements below are granted -
+  the symptom is a 3D view that never appears, with no error message.
+
+  These are the same three keys Qt itself ships for QtWebEngine applications;
+  none of them weakens the sandbox for anything EnzyDock does.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

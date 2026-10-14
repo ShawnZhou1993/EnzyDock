@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<!--
+    EnzyDock 3D viewer host page (Step 7).
+
+    3Dmol.js is vendored next to this file (3Dmol.min.js) so the viewer works
+    offline and inside the packaged EXE.  Python drives the page through one
+    call: window.enzydockViewer.setScene(payload) - all geometry (pocket
+    residues, label anchors, interaction segments) is computed in Python by
+    app/visualization/, this file only draws it.
+
+    Payload (all keys optional):
+        protein  {text, visible, name, surface}
+        ligand   {text, visible}
+        pocket   {text, visible, labels[{text, x, y, z, ax, ay, az}]}
+                 (x/y/z = residue centre, a* = where the text is drawn)
+        contacts {items[{kind,kind_label,label,start,end,distance,
+                         color,radius,dashed,show_label}], visible}
+                 (the single source of every contact; always sent, so the
+                  "H-bonds" and "Contacts" chips each work on their own)
+        hbonds   {segments[[x1,y1,z1,x2,y2,z2,distance]], visible}
+                 (the hydrogen-bond subset, kept for compatibility; the page
+                  draws from contacts.items instead of duplicating them)
+        info     {pocket_source, pocket_residues[], hbond_count,
+                  protein_name, contact_counts{}, contact_summary, notes[]}
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>EnzyDock 3D Viewer</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #14181d;
+            color: #93a1b1;
+            font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+            overflow: hidden;
+        }
+        #container {
+            position: absolute;
+            inset: 0;
+        }
+        #overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            text-align: center;
+            padding: 24px;
+            box-sizing: border-box;
+            pointer-events: none;
+            user-select: none;
+        }
+        #overlay.hidden { display: none; }
+        #overlay .title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #e6edf3;
+            letter-spacing: 0.4px;
+        }
+        #overlay .hint {
+            font-size: 12px;
+            max-width: 460px;
+            line-height: 1.5;
+        }
+        #overlay .badge {
+            margin-top: 4px;
+            padding: 3px 10px;
+            border: 1px solid #2f3944;
+            border-radius: 999px;
+            font-size: 11px;
+            color: #3d9bfd;
+        }
+        #hud {
+            position: absolute;
+            left: 8px;
+            top: 8px;
+            max-width: 60%;
+            font-size: 11px;
+            line-height: 1.55;
+            color: #b8c4d0;
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 0 1px 2px #0b0e12;
+        }
+        #hud .warn { color: #d29922; }
+        #legend {
+            position: absolute;
+            left: 8px;
+            bottom: 8px;
+            font-size: 11px;
+            line-height: 1.6;
+            color: #7d8b99;
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 0 1px 2px #0b0e12;
+        }
+        #legend b { color: #b8c4d0; font-weight: 600; }
+        #legend .swatch {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="hud"></div>
+    <div id="overlay">
+        <div class="title">3D Viewer</div>
+        <div class="hint">
+            No structure loaded yet. Prepare a protein and a ligand, run
+            docking, and the poses will appear here.
+        </div>
+        <div class="badge">3Dmol.js</div>
+    </div>
+    <div id="legend"></div>
+
+    <script src="3Dmol.min.js"></script>
+    <script>
+    (function () {
+        "use strict";
+
+        var COLOR = {
+            background: "#14181d",
+            protein: "#8fb8de",
+            pocketSurface: "#3d9bfd",
+            label: "#ffe9b0",
+            ligand: "#3fb950"
+        };
+
+        //: Fallback styling per interaction kind; Python sends these too.
+        var CONTACT_STYLE = {
+            "salt bridge": { color: "#ff7ab6", radius: 0.10, dashed: true },
+            "hbond": { color: "#ffd479", radius: 0.09, dashed: true },
+            "halogen": { color: "#7ee0ff", radius: 0.09, dashed: true },
+            "pi-stacking": { color: "#b18cff", radius: 0.07, dashed: false },
+            "hydrophobic": { color: "#8f9aa6", radius: 0.05, dashed: false }
+        };
+
+        //: Interaction labels are text in the 3D scene - keep the count sane.
+        var MAX_CONTACT_LABELS = 14;
+
+        var viewer = null;
+        var initialised = false;
+        var state = {
+            protein: null,
+            ligand: null,
+            pocket: null,
+            hbonds: { segments: [], visible: false },
+            contacts: { items: [], visible: false },
+            info: {}
+        };
+
+        function escapeHtml(text) {
+            return String(text === undefined || text === null ? "" : text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+        }
+
+        function overlay(text, badge) {
+            var el = document.getElementById("overlay");
+            if (!el) return;
+            if (!text) { el.classList.add("hidden"); return; }
+            el.classList.remove("hidden");
+            el.innerHTML =
+                '<div class="title">3D Viewer</div>' +
+                '<div class="hint">' + text + "</div>" +
+                (badge ? '<div class="badge">' + escapeHtml(badge) + "</div>" : "");
+        }
+
+        function hud() {
+            var el = document.getElementById("hud");
+            if (!el) return;
+            var info = state.info || {};
+            var lines = [];
+            var headline = [];
+            if (info.protein_name) headline.push(escapeHtml(info.protein_name));
+            else if (state.protein && state.protein.text) headline.push("receptor");
+            if (state.ligand && state.ligand.text) headline.push("docked pose");
+            if (headline.length) {
+                lines.push("<b>" + headline.join(" &middot; ") + "</b>");
+            }
+            var notes = info.notes || [];
+            notes.forEach(function (note) {
+                lines.push('<span class="warn">' + escapeHtml(note) + "</span>");
+            });
+            if (!state.protein && state.ligand && state.ligand.text) {
+                lines.push('<span class="warn">No receptor structure in this ' +
+                           'scene - only the pose is shown.</span>');
+            }
+            el.innerHTML = lines.join("<br/>");
+        }
+
+        function legend() {
+            var el = document.getElementById("legend");
+            if (!el) return;
+            if (!state.protein && !state.ligand) { el.innerHTML = ""; return; }
+            var info = state.info || {};
+            var lines = [];
+            if (info.pocket_residues && info.pocket_residues.length) {
+                lines.push("<b>Pocket</b> " + info.pocket_residues.length +
+                           " residues (" + escapeHtml(info.pocket_source || "") + ")");
+            }
+            // The legend describes the scene, so it only lists the kinds the
+            // toolbar is actually drawing right now.
+            var counts = info.contact_counts || {};
+            var showAll = !!(state.contacts && state.contacts.visible);
+            var showHBonds = !!(state.hbonds && state.hbonds.visible);
+            Object.keys(counts).forEach(function (kind) {
+                if (!showAll && !(showHBonds && kind === "hbond")) { return; }
+                var style = CONTACT_STYLE[kind] || {};
+                lines.push('<span class="swatch" style="background:' +
+                           (style.color || "#8f9aa6") + '"></span><b>' +
+                           escapeHtml(kind) + "</b> " + counts[kind]);
+            });
+            if (!showAll && !showHBonds && info.contact_summary) {
+                lines.push(escapeHtml(info.contact_summary) +
+                           " - tick H-bonds or Contacts to draw them");
+            }
+            if (showHBonds && !counts["hbond"] && info.hbond_count) {
+                lines.push('<span class="swatch" style="background:' +
+                           CONTACT_STYLE["hbond"].color + '"></span><b>H-bonds</b> ' +
+                           info.hbond_count + " within 3.5 A");
+            }
+            el.innerHTML = lines.join("<br/>");
+        }
+
+        function init() {
+            if (initialised) return true;
+            if (typeof $3Dmol === "undefined") {
+                overlay("3Dmol.js could not be loaded from disk, so the " +
+                        "structure cannot be drawn. Docking and exports are " +
+                        "unaffected.", "3Dmol.js missing");
+                return false;
+            }
+            try {
+                viewer = $3Dmol.createViewer("container", {
+                    backgroundColor: COLOR.background,
+                    antialias: true,
+                    disableFog: false
+                });
+            } catch (error) {
+                overlay("The 3D canvas could not be created: " + error,
+                        "WebGL unavailable");
+                return false;
+            }
+            initialised = true;
+            return true;
+        }
+
+        function addModel(text) {
+            if (!text) return null;
+            try {
+                return viewer.addModel(text, "pdb");
+            } catch (error) {
+                console.error("addModel failed", error);
+                return null;
+            }
+        }
+
+        function clearScene() {
+            try {
+                viewer.removeAllModels();
+                viewer.removeAllSurfaces();
+                viewer.removeAllLabels();
+            } catch (error) { /* older builds: ignore */ }
+        }
+
+        function addCylinder(spec) {
+            try {
+                viewer.addCylinder({
+                    start: spec.start,
+                    end: spec.end,
+                    radius: spec.radius,
+                    color: spec.color,
+                    dashed: !!spec.dashed,
+                    dashLength: 0.16,
+                    gapLength: 0.12,
+                    fromCap: true,
+                    toCap: true
+                });
+            } catch (error) {
+                console.error("addCylinder failed", error);
+            }
+        }
+
+        function addContactLabel(text, position) {
+            try {
+                viewer.addLabel(text, {
+                    position: position,
+                    font: "sans-serif",
+                    fontSize: 10,
+                    fontColor: "#ffffff",
+                    showBackground: true,
+                    backgroundOpacity: 0.42,
+                    backgroundColor: "#1b2027",
+                    inFront: true
+                });
+            } catch (error) {
+                console.error("addLabel failed", error);
+            }
+        }
+
+        function midpoint(start, end) {
+            return {
+                x: (start[0] + end[0]) / 2,
+                y: (start[1] + end[1]) / 2,
+                z: (start[2] + end[2]) / 2
+            };
+        }
+
+        function toPoint(values) {
+            return { x: values[0], y: values[1], z: values[2] };
+        }
+
+        /**
+         * Match the WebGL canvas to the widget, then frame the scene.
+         *
+         * 3Dmol sizes its canvas when the viewer is created and on browser
+         * ``resize`` events.  A Qt widget can change size without either
+         * happening (dock/undock, splitter drag, the result panel appearing),
+         * and then the structure is drawn into a canvas that no longer covers
+         * the visible area - it ends up small and stuck in a corner.  Calling
+         * ``resize()`` here costs nothing and removes that failure mode.
+         */
+        function fit() {
+            if (!viewer) return;
+            try {
+                viewer.resize();
+            } catch (error) {
+                console.error("viewer.resize failed", error);
+            }
+            viewer.zoomTo();
+            viewer.render();
+        }
+
+        function render() {
+            if (!init()) return;
+            clearScene();
+
+            var drew = false;
+
+            // --- receptor: cartoon (+ optional translucent surface) --------
+            if (state.protein && state.protein.visible && state.protein.text) {
+                var model = addModel(state.protein.text);
+                if (model !== null) {
+                    viewer.setStyle({ model: model }, {
+                        cartoon: { color: COLOR.protein, opacity: 1.0 }
+                    });
+                    if (state.protein.surface) {
+                        try {
+                            viewer.addSurface($3Dmol.SurfaceType.VDW, {
+                                opacity: 0.25,
+                                color: COLOR.protein
+                            }, { model: model });
+                        } catch (error) {
+                            console.error("addSurface (receptor) failed", error);
+                        }
+                    }
+                    drew = true;
+                }
+            }
+
+            // --- ligand: sticks -------------------------------------------
+            if (state.ligand && state.ligand.visible && state.ligand.text) {
+                var lig = addModel(state.ligand.text);
+                if (lig !== null) {
+                    viewer.setStyle({ model: lig }, {
+                        stick: { radius: 0.18, colorscheme: "greenCarbon" }
+                    });
+                    drew = true;
+                }
+            }
+
+            // --- pocket: sticks + transparent surface ---------------------
+            var pocket = state.pocket;
+            if (pocket && pocket.visible && pocket.text) {
+                var pocketModel = addModel(pocket.text);
+                if (pocketModel !== null) {
+                    viewer.setStyle({ model: pocketModel }, {
+                        stick: { radius: 0.12, colorscheme: "orangeCarbon" }
+                    });
+                    try {
+                        viewer.addSurface($3Dmol.SurfaceType.VDW, {
+                            opacity: 0.42,
+                            color: COLOR.pocketSurface,
+                            vdwScale: 1.0
+                        }, { model: pocketModel });
+                    } catch (error) {
+                        console.error("addSurface (pocket) failed", error);
+                    }
+                    drew = true;
+                }
+            }
+
+            // --- residue labels (with a leader line back to the residue) ---
+            if (pocket && pocket.labels && pocket.labels.length) {
+                pocket.labels.forEach(function (label) {
+                    var residue = { x: label.x, y: label.y, z: label.z };
+                    // Python pushes the text outwards so neighbouring names do
+                    // not overlap; the residue itself stays at x/y/z.
+                    var anchor = (label.ax === undefined)
+                        ? residue
+                        : { x: label.ax, y: label.ay, z: label.az };
+                    if (label.ax !== undefined) {
+                        try {
+                            viewer.addCylinder({
+                                start: residue,
+                                end: anchor,
+                                radius: 0.018,
+                                color: "#5b6673",
+                                dashed: true,
+                                dashLength: 0.12,
+                                gapLength: 0.10,
+                                fromCap: false,
+                                toCap: false
+                            });
+                        } catch (error) { /* cosmetic only */ }
+                    }
+                    viewer.addLabel(label.text, {
+                        position: anchor,
+                        font: "sans-serif",
+                        fontSize: 11,
+                        fontColor: COLOR.label,
+                        showBackground: true,
+                        backgroundOpacity: 0.35,
+                        backgroundColor: "#1b2027",
+                        inFront: true
+                    });
+                });
+            }
+
+            // --- interactions, coloured by kind -----------------------------
+            // There is exactly one drawing path for contacts.  A separate
+            // "hydrogen bond" pass used to draw the same cylinders a second
+            // time whenever both toolbar chips were on, which doubled the line
+            // width and made the scene look wrong.
+            //
+            // "H-bonds" narrows the list to hydrogen bonds; "Contacts" shows
+            // everything the analysis found.  The items are always sent, so
+            // either chip works on its own.
+            var contacts = state.contacts;
+            var items = (contacts && contacts.items) || [];
+            var showAll = !!(contacts && contacts.visible);
+            var showHBonds = !!(state.hbonds && state.hbonds.visible);
+            if (items.length && (showAll || showHBonds)) {
+                var labelBudget = MAX_CONTACT_LABELS;
+                items.forEach(function (item) {
+                    if (!showAll && item.kind !== "hbond") { return; }
+                    var fallback = CONTACT_STYLE[item.kind] || {};
+                    var dashed = item.dashed !== undefined ? !!item.dashed
+                                                           : !!fallback.dashed;
+                    addCylinder({
+                        start: toPoint(item.start),
+                        end: toPoint(item.end),
+                        radius: item.radius || fallback.radius || 0.08,
+                        color: item.color || fallback.color || "#ffd479",
+                        dashed: dashed
+                    });
+                    var wantsLabel = item.show_label !== undefined
+                        ? !!item.show_label : dashed;
+                    if (wantsLabel && labelBudget > 0) {
+                        labelBudget -= 1;
+                        addContactLabel(String(item.distance),
+                                        midpoint(item.start, item.end));
+                    }
+                });
+            }
+
+            hud();
+            legend();
+
+            if (!drew) {
+                overlay("Nothing to display - enable Protein or Ligand in the " +
+                        "toolbar above.", "");
+                viewer.render();
+                return;
+            }
+
+            overlay(null);
+            fit();
+        }
+
+        // --------------------------------------------------------- public API
+        window.enzydockViewer = {
+            /** Draw a complete scene produced by app/visualization/viewer.py. */
+            setScene: function (payload) {
+                if (!payload) return;
+                state.protein = payload.protein || null;
+                state.ligand = payload.ligand || null;
+                state.pocket = payload.pocket || null;
+                state.hbonds = payload.hbonds || { segments: [], visible: false };
+                state.contacts = payload.contacts || { items: [], visible: false };
+                state.info = payload.info || {};
+                render();
+            },
+
+            resetView: function () {
+                if (!init()) return;
+                fit();
+            },
+
+            clear: function () {
+                state = {
+                    protein: null,
+                    ligand: null,
+                    pocket: null,
+                    hbonds: { segments: [], visible: false },
+                    contacts: { items: [], visible: false },
+                    info: {}
+                };
+                if (init() && viewer) {
+                    clearScene();
+                    viewer.render();
+                }
+                hud();
+                overlay("No structure loaded yet. Prepare a protein and a " +
+                        "ligand, run docking, and the poses will appear here.",
+                        "3Dmol.js");
+                legend();
+            },
+
+            /** Diagnostics: is the 3D engine actually usable here? */
+            isReady: function () {
+                return init();
+            },
+
+            /**
+             * What is really on the canvas?  Used by the smoke probe and by
+             * the test-suite to prove that the protein (and not only the
+             * ligand) made it into the scene.
+             */
+            describe: function () {
+                var out = {
+                    ready: false, models: 0, atoms: 0, surfaces: 0,
+                    hasProtein: !!state.protein,
+                    proteinVisible: !!(state.protein && state.protein.visible),
+                    proteinChars: (state.protein && state.protein.text || "").length,
+                    ligandChars: (state.ligand && state.ligand.text || "").length,
+                    contacts: (state.contacts && state.contacts.items || []).length,
+                    overlayHidden: !!(document.getElementById("overlay") &&
+                        document.getElementById("overlay").classList.contains("hidden"))
+                };
+                // Canvas vs. container: a mismatch here is what makes the
+                // structure look tiny or drift into a corner.
+                var container = document.getElementById("container");
+                var canvas = container ? container.querySelector("canvas") : null;
+                out.containerWidth = container ? container.clientWidth : 0;
+                out.containerHeight = container ? container.clientHeight : 0;
+                out.canvasWidth = canvas ? canvas.clientWidth : 0;
+                out.canvasHeight = canvas ? canvas.clientHeight : 0;
+                out.bufferWidth = canvas ? canvas.width : 0;
+                out.bufferHeight = canvas ? canvas.height : 0;
+                out.devicePixelRatio = window.devicePixelRatio || 1;
+                if (!init()) return out;
+                out.ready = true;
+                var models = viewer.models || [];
+                out.models = models.length;
+                for (var i = 0; i < models.length; i++) {
+                    try {
+                        out.atoms += models[i].selectedAtoms({}).length;
+                    } catch (error) { /* ignore */ }
+                }
+                try {
+                    out.surfaces = Object.keys(viewer.surfaces || {}).length;
+                } catch (error) { /* ignore */ }
+                return out;
+            }
+        };
+
+        // The Qt widget can be resized without the page being reloaded
+        // (splitter drag, dock/undock, entering or leaving full screen).
+        // Re-fit so the structure always fills the visible canvas.
+        var resizeTimer = null;
+        window.addEventListener("resize", function () {
+            if (resizeTimer) { clearTimeout(resizeTimer); }
+            resizeTimer = setTimeout(function () {
+                resizeTimer = null;
+                if (initialised && viewer) { fit(); }
+            }, 120);
+        });
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", function () { init(); });
+        } else {
+            init();
+        }
+    })();
+    </script>
+</body>
+</html>

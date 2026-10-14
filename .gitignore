@@ -1,0 +1,81 @@
+# ---- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+# setuptools' build/ *and* the PyInstaller workpath both live here
+build/
+develop-eggs/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg
+.installed.cfg
+MANIFEST
+
+# ---- Environments ----------------------------------------------------------
+.venv/
+venv/
+ENV/
+env/
+.env
+.venv-*/
+
+# ---- Testing / coverage ----------------------------------------------------
+.pytest_cache/
+.pytest-data/
+.pytest-workspace/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+cython_debug/
+
+# ---- Runtime artefacts (never commit user data) ----------------------------
+# A docking run copies the user's files into workspace/<timestamp>/; those are
+# the user's data, not part of the project.
+workspace/
+logs/
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# ---- Packaging -------------------------------------------------------------
+# PyInstaller writes the bundle and its workpath here.
+dist/
+*.spec
+*.manifest
+
+# ---- Editors / IDEs --------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+
+# ---- OS --------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ---- Agent / tooling scratch ----------------------------------------------
+.workbuddy/
+.claude/
+.cursor/
+.ruff_cache/
+.mypy_cache/

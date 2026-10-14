@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enzydock"
+version = "0.1.0"
+description = "EnzyDock - a desktop molecular docking platform for Windows and macOS (PySide6 + RDKit + AutoDock Vina)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "EnzyDock" }]
+keywords = ["molecular docking", "AutoDock Vina", "RDKit", "PySide6", "enzyme engineering"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
+dependencies = [
+    "PySide6>=6.6,<6.10",
+    "rdkit>=2024.3",
+    "numpy>=1.26",
+    # PDBQT writing (AutoDock atom types + Gasteiger charges).
+    # meeko is the AutoDock/Vina authors' own writer and is pure Python;
+    # scipy and gemmi are its runtime dependencies.
+    "meeko>=0.6",
+    "scipy>=1.11",
+    "gemmi>=0.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pyinstaller>=6.3",
+]
+export = [
+    "pandas>=2.0",
+]
+
+[project.scripts]
+enzydock = "app.main:main"
+
+[project.gui-scripts]
+enzydock-gui = "app.main:main"
+
+[tool.setuptools]
+packages = ["app", "app.gui", "app.docking", "app.chemistry",
+            "app.export", "app.visualization", "app.utils"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+app = ["resources/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "e2e: runs the real AutoDock Vina binary (skipped when Vina is not installed)",
+]
+
+[tool.black]
+line-length = 100

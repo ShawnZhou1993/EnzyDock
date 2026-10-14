@@ -1,0 +1,25 @@
+# Line endings are part of the contract for a few files here, so they are
+# pinned instead of left to whatever core.autocrlf each checkout happens to
+# use.  Without this, a Windows box (where Git defaults to autocrlf=true)
+# turns every LF into CRLF on checkout and:
+#
+#   *.sh / *.command  -> dies on macOS with
+#                        "syntax error near unexpected token"
+#   *.bat             -> cmd.exe mishandles its :need subroutine with lone LF
+#   *.txt             -> HOW-TO-RUN.txt must reach Notepad as CRLF *with* a
+#                        UTF-8 BOM; HOW-TO-RUN-mac.txt must stay pure LF
+#
+# Everything else (.py, .md, .toml, ...) is newline-agnostic and is left to
+# Git's own text detection.
+
+* text=auto
+
+# macOS shell - LF only, everywhere.
+*.sh        text eol=lf
+*.command   text eol=lf
+
+# Windows batch - CRLF only, everywhere.
+*.bat       text eol=crlf
+
+# Shipped byte-for-byte: no normalisation, no BOM stripping.
+*.txt       -text

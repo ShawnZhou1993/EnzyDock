@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# EnzyDock - runtime requirements
+#
+# Install into a dedicated virtual environment:
+#     Windows:  python -m venv .venv
+#               .venv\Scripts\python.exe -m pip install -r requirements.txt
+#     macOS:    python3 -m venv .venv
+#               .venv/bin/pip install -r requirements.txt
+#
+# NOTE for Windows users
+#   * RDKit has no `pip` source build requirement on Windows: official wheels
+#     exist for CPython 3.10 - 3.12.  Prefer Python 3.12 for maximum
+#     compatibility with PySide6 and PyInstaller.
+#   * PySide6 (>=6.6) already ships QtWebEngine, which is required by the
+#     embedded 3Dmol.js viewer.  Do NOT install `PySide6-Essentials` only.
+#
+# NOTE for macOS users
+#   * Apple Silicon: use a native arm64 Python (python.org installer or
+#     `brew install python@3.12`).  Building under Rosetta works but the
+#     resulting .app is x86_64 and slower.
+#   * Homebrew Python is fine; the build script creates its own .venv anyway.
+#   * AutoDock Vina is bundled (app/resources/bin/vina_mac_aarch64), so
+#     `brew install autodock-vina` is NOT needed - and if you do install it,
+#     EnzyDock still prefers the bundled copy unless you say otherwise.
+#   * OpenBabel is optional (fallback only): `brew install open-babel`.
+#   * Xcode command line tools are required by PyInstaller's bootloader:
+#     `xcode-select --install`.
+# ---------------------------------------------------------------------------
+
+# --- GUI -------------------------------------------------------------------
+PySide6>=6.6,<6.10
+
+# --- Cheminformatics -------------------------------------------------------
+rdkit>=2024.3
+
+# --- PDBQT preparation (ligand *and* receptor) -----------------------------
+# meeko is written by the AutoDock/Vina authors and is pure Python, so it is
+# the primary PDBQT writer: `MoleculePreparation` for ligands and the
+# `Polymer` machinery for receptors (which also fills in the polar hydrogens
+# AutoDock needs).  scipy + gemmi are meeko's own runtime dependencies.
+# OpenBabel is optional and only used as a fallback (see
+# app/chemistry/conversion.py and app/chemistry/receptor.py) - it has no
+# reliable pip wheel on Windows.
+meeko>=0.6
+scipy>=1.11
+gemmi>=0.6
+
+# --- Numerics --------------------------------------------------------------
+numpy>=1.26
+
+# --- Optional: tabular export (CSV / summary tables) -----------------------
+pandas>=2.0
+
+# --- Development / testing / packaging -------------------------------------
+# (install with: pip install -r requirements-dev.txt)
