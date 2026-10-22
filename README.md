@@ -503,6 +503,11 @@ reports which engine was found and where.
 
 ### Sending a build to somebody else
 
+Prebuilt downloads live on the **Releases** page:
+<https://github.com/ShawnZhou1993/EnzyDock/releases>. The notes for each
+version, and the checklist for producing one, are in
+[`docs/releases/`](docs/releases/README.md).
+
 The Windows bundle is 611 MB spread over 540 files, and copying that much  
 through a chat client or a USB stick loses files more often than one would  
 expect. The symptom is always the same and always misread:
@@ -753,7 +758,8 @@ EnzyDock/
 │       └── viewer/             # index.html + vendored 3Dmol.min.js
 ├── tests/                      # pytest suite (unit + GUI smoke + e2e)
 ├── examples/                   # sample protein & ligand files
-├── docs/                       # screenshots
+├── docs/                       # screenshots + release notes
+│   └── releases/               # per-version release notes + publishing checklist
 ├── scripts/
 │   ├── build_windows.py        # PyInstaller packaging, Windows (Step 10)
 │   ├── build_macos.py          # PyInstaller packaging, macOS .app (Step 11)
