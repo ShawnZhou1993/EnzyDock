@@ -709,6 +709,27 @@ def test_the_archive_sidecar_uses_lf(tmp_path: Path) -> None:
     assert b"\r" not in manifest.read_bytes()
 
 
+def test_the_packed_shell_scripts_keep_their_executable_bit(tmp_path: Path) -> None:
+    """On macOS the receiver double-clicks ``check-install.sh``.
+
+    A Windows packer cannot read POSIX permissions off the file system, and
+    ``ZipFile.write`` would store the Windows default - which has no execute
+    bit at all.  The script would then arrive as "Permission denied".
+    """
+    packer = _load("pack_distribution")
+    bundle = tmp_path / "EnzyDock"
+    bundle.mkdir()
+    (bundle / "check-install.sh").write_bytes(b"#!/bin/sh\necho hi\n")
+    (bundle / "notes.txt").write_bytes(b"plain\n")
+    archive = tmp_path / "out.zip"
+    packer.make_zip(bundle, archive, 6)
+
+    with zipfile.ZipFile(archive) as zf:
+        modes = {i.filename: i.external_attr >> 16 for i in zf.infolist()}
+    script = f"{bundle.name}/check-install.sh"
+    assert modes[script] == 0o100755, oct(modes[script])
+
+
 def test_the_parts_manifest_uses_lf(tmp_path: Path) -> None:
     splitter = _load("split_distribution")
     layout = _load("packaging_layout").WINDOWS

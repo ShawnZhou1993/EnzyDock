@@ -272,8 +272,18 @@ def write_kit(destination: Path, compresslevel: int = 6) -> tuple[Path, int, int
 
         for index, (path, relative) in enumerate(sources, start=1):
             payload = path.read_bytes()
-            zf.writestr(f"{KIT_NAME}/{SOURCE_DIR}/{relative.as_posix()}",
-                        payload)
+            name = f"{KIT_NAME}/{SOURCE_DIR}/{relative.as_posix()}"
+            if relative.suffix in (".sh", ".command"):
+                # A shell script without the executable bit cannot be run
+                # directly on macOS ("Permission denied").  ``writestr``
+                # stores 0600, so set the mode on the entry itself.
+                entry = zipfile.ZipInfo(name,
+                                        date_time=datetime.now().timetuple()[:6])
+                entry.external_attr = (0o100755 << 16)
+                entry.create_system = 3
+                zf.writestr(entry, payload)
+            else:
+                zf.writestr(name, payload)
             written += 1
             total += len(payload)
             if index % 100 == 0 or index == len(sources):

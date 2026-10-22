@@ -137,6 +137,24 @@ def test_the_read_me_is_present_and_readable(kit) -> None:
     assert "xcode-select" in text
 
 
+def test_the_shell_scripts_keep_their_executable_bit(kit) -> None:
+    """A ``.sh`` without 0755 cannot be run on macOS.
+
+    ``ZipFile.writestr`` records 0600, so every shell script in the kit
+    would arrive as "Permission denied" - the colleague would have to chmod
+    it by hand before anything worked.
+    """
+    with zipfile.ZipFile(kit) as zf:
+        entries = {i.filename: i for i in zf.infolist()}
+    scripts = [name for name in entries
+               if name.endswith((".sh", ".command"))]
+    assert scripts, "the kit contains no shell script at all"
+    for name in scripts:
+        mode = entries[name].external_attr >> 16
+        assert mode == 0o100755, (
+            f"{name} is not executable: {oct(mode)}")
+
+
 def test_the_kit_has_one_top_level_folder(kit) -> None:
     """Extracting must not spray files over the Downloads folder."""
     with zipfile.ZipFile(kit) as zf:

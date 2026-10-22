@@ -122,6 +122,26 @@ def human(size: float) -> str:
     return f"{size:.1f} GiB"
 
 
+def _write(archive: zipfile.ZipFile, path: Path, name: str) -> None:
+    """Add one file to the archive, keeping the executable bit where it counts.
+
+    A ZIP carries POSIX permissions, but a Windows packer cannot read them
+    from the file system, and ``ZipFile.write`` would store the Windows
+    default (no execute bit at all).  On macOS that turns
+    ``check-install.sh`` into a file Finder opens in TextEdit, so the
+    receiver has to ``chmod +x`` before the script will run.  Set the bit
+    here instead: a shell script is always meant to be executable.
+    """
+    if path.suffix in (".sh", ".command"):
+        info = zipfile.ZipInfo(name, date_time=datetime.now().timetuple()[:6])
+        info.external_attr = (0o100755 << 16)
+        info.create_system = 3                    # 3 = Unix
+        with path.open("rb") as handle:
+            archive.writestr(info, handle.read())
+        return
+    archive.write(path, name)
+
+
 def make_zip(bundle: Path, destination: Path, compresslevel: int,
              side_files: tuple[Path, ...] = ()) -> int:
     """Pack the bundle, keeping ``EnzyDock/`` as the single top-level entry.
@@ -142,11 +162,11 @@ def make_zip(bundle: Path, destination: Path, compresslevel: int,
                          compresslevel=compresslevel) as archive:
         for index, path in enumerate(files, start=1):
             relative = path.relative_to(bundle)
-            archive.write(path, f"{bundle.name}/{relative.as_posix()}")
+            _write(archive, path, f"{bundle.name}/{relative.as_posix()}")
             if index % 100 == 0 or index == len(files):
                 print(f"  packed {index}/{len(files)} files")
         for index, path in enumerate(sides, start=1):
-            archive.write(path, path.name)
+            _write(archive, path, path.name)
             print(f"  packed {len(files) + index}/{total} files")
 
     # Verify only *after* the handle is closed.  ``testzip()`` on an archive
