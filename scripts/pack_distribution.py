@@ -207,7 +207,11 @@ def write_manifest(bundle: Path, count: int, total: int,
     # inside it is invisible to anyone who has not right-clicked it.
     manifest = (bundle.parent if layout is packaging_layout.MACOS
                 else bundle) / MANIFEST_NAME
-    manifest.write_text("\n".join(lines), encoding="utf-8")
+    # LF, always.  ``Path.write_text`` translates ``\n`` to the *host's* line
+    # ending, so on Windows this file would be written with CRLF - and then
+    # ``sha256sum -c BUNDLE-MANIFEST.txt`` fails with "could not be read",
+    # because the file name it extracts ends in a stray carriage return.
+    manifest.write_bytes("\n".join(lines).encode("utf-8"))
     return manifest
 
 
@@ -280,7 +284,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  verified: {written} members, CRCs all match")
         archive_hash = sha256(archive)
         sidecar = archive.with_suffix(archive.suffix + ".sha256")
-        sidecar.write_text(f"{archive_hash} *{archive.name}\n", encoding="ascii")
+        # LF, not the host's line ending - see write_manifest() above.  A CRLF
+        # here makes ``sha256sum -c`` fail on the *file name*, which looks
+        # exactly like a corrupt download.
+        sidecar.write_bytes(f"{archive_hash} *{archive.name}\n".encode("ascii"))
 
     print()
     print(f"  files     : {count}")

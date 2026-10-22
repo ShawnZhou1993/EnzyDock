@@ -321,7 +321,9 @@ def write_manifest(destination: Path, archive: Path, files: int,
         "",
     ]
     manifest = destination / f"{KIT_NAME}-MANIFEST.txt"
-    manifest.write_text("\n".join(lines), encoding="utf-8")
+    # LF, always: ``Path.write_text`` would use the host's line ending, and
+    # a CRLF here breaks ``sha256sum -c`` on the file name.
+    manifest.write_bytes("\n".join(lines).encode("utf-8"))
     return manifest
 
 

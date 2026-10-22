@@ -366,8 +366,11 @@ def write_manifest(folder: Path, archive: Path, pieces: list[Path],
         stamp=f"{datetime.now():%Y-%m-%d %H:%M:%S}",
     )
     path = folder / "PARTS-MANIFEST.txt"
-    path.write_bytes(text.replace("\r\n", "\n").replace("\n", "\r\n")
-                     .encode("utf-8"))
+    # LF, not CRLF: this file carries one SHA256 line per volume, and
+    # ``sha256sum -c`` mis-reads a CRLF file name (it keeps the carriage
+    # return) and then reports the volume as unreadable.  The merge script
+    # carries its own expected hash, so nothing depends on CRLF here.
+    path.write_bytes(text.replace("\r\n", "\n").encode("utf-8"))
     return path
 
 

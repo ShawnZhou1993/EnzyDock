@@ -19,6 +19,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import re
+import shutil
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -567,3 +570,116 @@ def test_no_gitattributes_pattern_carries_a_trailing_comment() -> None:
     for pattern in _gitattributes():
         assert "#" not in pattern, (
             f"{pattern!r} has an inline comment, so it matches nothing")
+
+
+# --- checksum sidecars ------------------------------------------------------
+#
+# A `.sha256` file is consumed by a machine, not by a person: the receiver
+# runs `sha256sum -c` (Linux, Git Bash) or `shasum -a 256 -c` (macOS) and
+# expects it to print "OK".  A CRLF line ending makes both tools read the
+# file name as "archive.zip\r", which they cannot open - the tool then
+# reports the download as corrupt, when the download is in fact perfect.
+# That is the worst possible symptom, so the sidecars are written with LF
+# on every platform, and this block proves it.
+
+
+def _checksum_tool() -> list[str]:
+    """The command that verifies a checksum file, if this machine has one."""
+    sha256sum = shutil.which("sha256sum")
+    if sha256sum:
+        return [sha256sum]
+    shasum = shutil.which("shasum")
+    if shasum:
+        return [shasum, "-a", "256"]
+    return []
+
+
+def test_a_checksum_file_written_with_crlf_is_unusable(tmp_path: Path) -> None:
+    """Why the sidecars below must use LF - demonstrated, not asserted."""
+    payload = tmp_path / "archive.zip"
+    payload.write_bytes(b"payload" * 100)
+    digest = hashlib.sha256(payload.read_bytes()).hexdigest()
+
+    broken = tmp_path / "broken.sha256"
+    broken.write_bytes(f"{digest} *archive.zip\r\n".encode("ascii"))
+    good = tmp_path / "good.sha256"
+    good.write_bytes(f"{digest} *archive.zip\n".encode("ascii"))
+
+    tool = _checksum_tool()
+    if not tool:
+        pytest.skip("neither sha256sum nor shasum is installed here")
+
+    good_run = subprocess.run(tool + ["-c", good.name], cwd=tmp_path,
+                              capture_output=True, text=True)
+    assert good_run.returncode == 0, good_run.stdout + good_run.stderr
+
+    broken_run = subprocess.run(tool + ["-c", broken.name], cwd=tmp_path,
+                                capture_output=True, text=True)
+    assert broken_run.returncode != 0, (
+        "the CRLF file verified fine, so the premise of this suite is wrong")
+    assert "could not be read" in (broken_run.stdout + broken_run.stderr).lower()
+
+
+def _load(name: str):
+    path = PROJECT_ROOT / "scripts" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"_sidecar_{name}", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_bundle_manifest_uses_lf(tmp_path: Path) -> None:
+    packer = _load("pack_distribution")
+    layout = _load("packaging_layout").WINDOWS
+    bundle = tmp_path / "EnzyDock"
+    (bundle / "_internal").mkdir(parents=True)
+    (bundle / "EnzyDock.exe").write_bytes(b"MZ")
+    manifest = packer.write_manifest(bundle, 1, 2, layout)
+    data = manifest.read_bytes()
+    assert b"\r" not in data, "the bundle manifest must use LF"
+    assert b"BUNDLE-MANIFEST" not in data, "it is a list, not a binary"
+
+
+def test_the_archive_sidecar_uses_lf(tmp_path: Path) -> None:
+    """The real packing path: bundle in, archive + sidecar out.
+
+    ``*.zip.sha256`` is the file a receiver feeds to ``sha256sum -c``, so it
+    has to be written with LF no matter which machine packed the release.
+    """
+    packer = _load("pack_distribution")
+    bundle = tmp_path / "EnzyDock"
+    (bundle / "_internal").mkdir(parents=True)
+    (bundle / "EnzyDock.exe").write_bytes(b"MZ")
+    out = tmp_path / "out"
+    assert packer.main(["--dist", str(bundle), "--out", str(out),
+                         "--no-extras"]) == 0
+
+    sidecars = list(out.glob("*.sha256"))
+    assert len(sidecars) == 1, sidecars
+    assert b"\r" not in sidecars[0].read_bytes()
+
+    manifest = bundle / "BUNDLE-MANIFEST.txt"
+    assert manifest.is_file(), "the bundle manifest is missing"
+    assert b"\r" not in manifest.read_bytes()
+
+
+def test_the_parts_manifest_uses_lf(tmp_path: Path) -> None:
+    splitter = _load("split_distribution")
+    layout = _load("packaging_layout").WINDOWS
+    archive = tmp_path / "EnzyDock-0.1.0-win64.zip"
+    archive.write_bytes(b"zip content")
+    piece = tmp_path / "EnzyDock-0.1.0-win64.zip.001"
+    piece.write_bytes(b"part")
+    manifest = splitter.write_manifest(tmp_path, archive, [piece], 1 << 20,
+                                       splitter.sha256(archive), "0.1.0",
+                                       layout)
+    assert b"\r" not in manifest.read_bytes()
+
+
+def test_the_mac_kit_manifest_uses_lf(tmp_path: Path) -> None:
+    kit = _load("make_mac_source_kit")
+    archive = tmp_path / "EnzyDock-mac-build-kit-0.1.0.zip"
+    archive.write_bytes(b"kit")
+    manifest = kit.write_manifest(tmp_path, archive, 1, 10)
+    assert b"\r" not in manifest.read_bytes()
