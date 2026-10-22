@@ -222,6 +222,13 @@ def write_manifest(bundle: Path, count: int, total: int,
         else:                                              # pragma: no cover
             lines.append(f"  {'-' * 64}  {relative}  (MISSING)")
     lines.append("")
+    # Everything that is not a checksum line becomes a comment.  The manifest
+    # doubles as a checksum file that the receiver verifies with
+    # ``sha256sum -c BUNDLE-MANIFEST.txt``, and that tool complains about
+    # every line it cannot parse ("20 lines are improperly formatted") - a
+    # warning that looks like a broken download.  Both sha256sum and shasum
+    # skip lines that start with a hash mark.
+    lines = [f"# {line}" if line else "#" for line in lines]
     # Windows: inside the bundle, next to the .exe.  macOS: beside the .app,
     # next to check-install.sh - the .app is a package, and a file dropped
     # inside it is invisible to anyone who has not right-clicked it.
