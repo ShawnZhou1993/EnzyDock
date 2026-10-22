@@ -552,7 +552,8 @@ def _gitattributes() -> list[str]:
     "*.sh text eol=lf",
     "*.command text eol=lf",
     "*.bat text eol=crlf",
-    "*.txt -text",
+    "packaging/HOW-TO-RUN.txt text eol=crlf",
+    "packaging/HOW-TO-RUN-mac.txt text eol=lf",
 ])
 def test_the_line_ending_contract_is_pinned(pattern: str) -> None:
     """Without these, a Windows checkout writes CRLF into shell scripts.
@@ -563,6 +564,50 @@ def test_the_line_ending_contract_is_pinned(pattern: str) -> None:
     """
     assert any(line.split() == pattern.split() for line in _gitattributes()), (
         f"{pattern!r} is missing from .gitattributes")
+
+
+def test_a_fresh_checkout_produces_the_right_bytes(tmp_path: Path) -> None:
+    """What a collaborator actually gets when they clone this repository.
+
+    ``git checkout-index`` writes the index out through the same attribute
+    machinery a clone uses, so it shows the real bytes - without the cost of
+    a clone.  This is the check that caught the receiver note arriving with
+    LF endings: the attributes looked right, but the file in the repository
+    had been normalised, so the checkout produced the wrong bytes.
+    """
+    prefix = (tmp_path / "checkout").as_posix() + "/"
+    (tmp_path / "checkout").mkdir(parents=True, exist_ok=True)
+    done = subprocess.run(
+        ["git", "checkout-index", "-a", f"--prefix={prefix}"],
+        cwd=PROJECT_ROOT, capture_output=True, text=True)
+    if done.returncode != 0:
+        pytest.skip(f"git checkout-index failed: {done.stderr.strip()}")
+
+    root = tmp_path / "checkout"
+    if not (root / "scripts" / "build_mac.sh").is_file():
+        pytest.skip("the index is empty - nothing to check out")
+
+    def crlf(relative: str) -> int:
+        data = (root / relative).read_bytes()
+        return data.count(b"\r\n")
+
+    # Shell scripts must stay LF, or macOS refuses to run them.
+    for script in ("scripts/build_mac.sh", "packaging/check-install.sh"):
+        assert crlf(script) == 0, f"{script} would be CRLF after a checkout"
+
+    # The batch file must stay CRLF, or cmd.exe trips over it.
+    bat = (root / "packaging" / "check-install.bat").read_bytes()
+    assert b"\r\n" in bat and bat.replace(b"\r\n", b"").count(b"\n") == 0
+
+    # The Windows note must arrive as CRLF *with* the BOM, or Notepad shows
+    # mojibake on one line.
+    note = (root / "packaging" / "HOW-TO-RUN.txt").read_bytes()
+    assert note.startswith(b"\xef\xbb\xbf"), "the BOM was lost"
+    assert b"\r\n" in note and note.replace(b"\r\n", b"").count(b"\n") == 0
+
+    # The macOS note must stay pure LF.
+    mac_note = (root / "packaging" / "HOW-TO-RUN-mac.txt").read_bytes()
+    assert b"\r\n" not in mac_note
 
 
 def test_no_gitattributes_pattern_carries_a_trailing_comment() -> None:
