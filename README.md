@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20\(arm64%2Fx86__64\)-lightgrey.svg)
 
-![Tests](https://img.shields.io/badge/tests-529%20passed-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-541%20passed-brightgreen.svg)
 
 ![Engine](https://img.shields.io/badge/AutoDock%20Vina-1.2.7%20bundled-blue.svg)
 
@@ -536,6 +536,18 @@ Both helper files ship inside the bundle:
 Send only the archive, and send the SHA256 with it. The receiver unzips it to a  
 short path (`C:\EnzyDock`, never the WeChat received-files folder), runs  
 `check-install.bat`, and reports back if anything is missing.
+
+The `.zip.sha256` sidecar is written with **LF** line endings on every  
+platform, so the receiver's own tool verifies it directly:
+
+```sh
+sha256sum -c EnzyDock-0.1.0-win64.zip.sha256      # Linux, Git Bash
+shasum -a 256 -c EnzyDock-0.1.0-win64.zip.sha256  # macOS
+```
+
+Both print `EnzyDock-0.1.0-win64.zip: OK`. (A CRLF sidecar would make both  
+tools read the file name as `archive.zip\r`, fail to open it, and report a  
+perfect download as corrupt — `tests/test_packaging.py` guards this.)
 
 The macOS build gets the equivalent pair — `check-install.sh` (counts files in  
 `Contents/Frameworks`, and actually runs the bundled `vina_mac_aarch64 --version`) and `HOW-TO-RUN-mac.txt` — produced by the same  
