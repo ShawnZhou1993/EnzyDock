@@ -193,7 +193,7 @@ def write_manifest(bundle: Path, count: int, total: int,
     checker = layout.extras[0]
     archive_name = f"{layout.archive_stem(__version__)}.zip"
 
-    lines = [
+    header = [
         f"EnzyDock {__version__} - {layout.system} {layout.arch} distribution",
         "=" * 58,
         "",
@@ -210,25 +210,25 @@ def write_manifest(bundle: Path, count: int, total: int,
         f"       {layout.hash_command} {archive_name}",
     ]
     if layout.notes:
-        lines += ["", "Before you start"] + [f"  {line}" for line in layout.notes]
-    lines += [
+        header += ["", "Before you start"] + [f"  {line}" for line in layout.notes]
+    header += [
         "",
         "SHA256 of the files a broken copy is usually caught by",
         "-----------------------------------------------------",
     ]
+    # The manifest doubles as a checksum file that the receiver verifies with
+    # ``sha256sum -c BUNDLE-MANIFEST.txt``, and that tool complains about
+    # every line it cannot parse ("20 lines are improperly formatted") - a
+    # warning that reads like a broken download.  Both sha256sum and shasum
+    # skip lines that start with a hash mark, so the prose becomes comments.
+    # The checksum lines themselves must stay exactly as they are.
+    lines = [f"# {line}" if line else "#" for line in header]
     for relative, path in layout.critical_paths(bundle):
         if path.is_file():
             lines.append(f"  {sha256(path)}  {relative}")
         else:                                              # pragma: no cover
-            lines.append(f"  {'-' * 64}  {relative}  (MISSING)")
+            lines.append(f"#   {'-' * 64}  {relative}  (MISSING)")
     lines.append("")
-    # Everything that is not a checksum line becomes a comment.  The manifest
-    # doubles as a checksum file that the receiver verifies with
-    # ``sha256sum -c BUNDLE-MANIFEST.txt``, and that tool complains about
-    # every line it cannot parse ("20 lines are improperly formatted") - a
-    # warning that looks like a broken download.  Both sha256sum and shasum
-    # skip lines that start with a hash mark.
-    lines = [f"# {line}" if line else "#" for line in lines]
     # Windows: inside the bundle, next to the .exe.  macOS: beside the .app,
     # next to check-install.sh - the .app is a package, and a file dropped
     # inside it is invisible to anyone who has not right-clicked it.

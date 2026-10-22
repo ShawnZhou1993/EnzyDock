@@ -709,6 +709,42 @@ def test_the_archive_sidecar_uses_lf(tmp_path: Path) -> None:
     assert b"\r" not in manifest.read_bytes()
 
 
+def test_the_bundle_manifest_verifies_with_the_standard_tool(tmp_path: Path) -> None:
+    """The manifest is a checksum file, not just a list.
+
+    It has to survive ``sha256sum -c BUNDLE-MANIFEST.txt`` at the receiver's
+    end: the prose becomes comments, the checksum lines must not.  Turning
+    *every* line into a comment is the easy mistake - the tool then reports
+    "no properly formatted SHA256 checksum lines found" and exits non-zero.
+    """
+    packer = _load("pack_distribution")
+    bundle = tmp_path / "EnzyDock"
+    (bundle / "_internal").mkdir(parents=True)
+    (bundle / "EnzyDock.exe").write_bytes(b"MZ")
+    out = tmp_path / "out"
+    assert packer.main(["--dist", str(bundle), "--out", str(out),
+                         "--no-extras"]) == 0
+
+    archives = list(out.glob("*.zip"))
+    assert len(archives) == 1, archives
+    unpacked = tmp_path / "unpacked"
+    with zipfile.ZipFile(archives[0]) as zf:
+        zf.extractall(unpacked)
+
+    tool = _checksum_tool()
+    if not tool:
+        pytest.skip("neither sha256sum nor shasum is installed here")
+
+    done = subprocess.run(tool + ["-c", "BUNDLE-MANIFEST.txt"],
+                          cwd=unpacked / "EnzyDock",
+                          capture_output=True, text=True)
+    output = done.stdout + done.stderr
+    assert done.returncode == 0, output
+    assert "improperly formatted" not in output, output
+    assert "no properly formatted" not in output, output
+    assert "EnzyDock.exe: OK" in output, output
+
+
 def test_the_packed_shell_scripts_keep_their_executable_bit(tmp_path: Path) -> None:
     """On macOS the receiver double-clicks ``check-install.sh``.
 

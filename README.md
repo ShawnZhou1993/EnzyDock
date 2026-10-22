@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20\(arm64%2Fx86__64\)-lightgrey.svg)
 
-![Tests](https://img.shields.io/badge/tests-541%20passed-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-543%20passed-brightgreen.svg)
 
 ![Engine](https://img.shields.io/badge/AutoDock%20Vina-1.2.7%20bundled-blue.svg)
 
