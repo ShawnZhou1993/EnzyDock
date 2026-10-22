@@ -6,13 +6,13 @@
 #   *.sh / *.command  -> dies on macOS with
 #                        "syntax error near unexpected token"
 #   *.bat             -> cmd.exe mishandles its :need subroutine with lone LF
-#   *.txt             -> HOW-TO-RUN.txt must reach Notepad as CRLF *with* a
-#                        UTF-8 BOM; HOW-TO-RUN-mac.txt must stay pure LF
+#   HOW-TO-RUN.txt    -> must reach Notepad as CRLF *with* a UTF-8 BOM
+#   HOW-TO-RUN-mac.txt-> must stay pure LF
 #
-# Everything else (.py, .md, .toml, ...) is newline-agnostic and is left to
-# Git's own text detection.
+# Everything else (.py, .md, .toml, ...) is newline-agnostic; LF everywhere
+# keeps the repository identical no matter who checks it out.
 
-* text=auto
+* text=auto eol=lf
 
 # macOS shell - LF only, everywhere.
 *.sh        text eol=lf
@@ -21,5 +21,11 @@
 # Windows batch - CRLF only, everywhere.
 *.bat       text eol=crlf
 
-# Shipped byte-for-byte: no normalisation, no BOM stripping.
-*.txt       -text
+# The two receiver notes are line-ending specific, and the BOM on the
+# Windows one is what stops Notepad from showing mojibake.
+packaging/HOW-TO-RUN.txt      text eol=crlf
+packaging/HOW-TO-RUN-mac.txt  text eol=lf
+
+# plistlib reads either, but LF keeps the file byte-identical to the one
+# that was reviewed.
+packaging/enzydock.entitlements text eol=lf
